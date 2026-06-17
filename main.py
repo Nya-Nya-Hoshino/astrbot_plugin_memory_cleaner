@@ -122,6 +122,7 @@ class Main(Star):
             f"当前对话ID: {curr_cid[:16]}...\n"
             f"对话总数:   {conv_count}"
         )
+        event.stop_event()
 
     @staticmethod
     def _extract_text(content) -> str:
@@ -211,6 +212,8 @@ class Main(Star):
 
             async for chunk in self._send_long_msg(event, "\n".join(lines)):
                 yield chunk
+
+            event.stop_event()
 
         except Exception as e:
             logger.error(f"[memory_cleaner] 记忆查询异常: {e}", exc_info=True)
@@ -369,6 +372,7 @@ class Main(Star):
                     yield chunk
 
             log("=== 清洗完成 ===")
+            event.stop_event()
 
         except Exception as e:
             logger.error(f"[memory_cleaner] 清洗过程异常: {e}", exc_info=True)
