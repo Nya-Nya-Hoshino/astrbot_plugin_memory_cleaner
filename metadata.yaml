@@ -1,6 +1,6 @@
 name: memory_cleaner
 desc: 管理员一键清洗上下文记忆，强制重载提示词人格设定并进行理解度自检评分
-help: 记忆清洗 - 管理员一键清洗上下文记忆，强制重载提示词人格设定并进行理解度自检评分
+help: 发送 /清洗记忆 清除当前会话所有对话历史、重载 AstrBot 当前配置的人格 Prompt、重建人格状态、检测 Prompt 理解度并生成评分报告。仅授权管理员可用。
 version: v1.0.0
 author: Nya-Nya-Hoshino
 repo: https://github.com/Nya-Nya-Hoshino/astrbot_plugin_memory_cleaner

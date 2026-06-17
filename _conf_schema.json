@@ -1,7 +1,12 @@
 {
-  "memory_cleaner_enabled": {
-    "description": "启用 记忆清洗",
-    "type": "bool",
-    "default": true
-  }
+    "admin_users": {
+        "description": "管理员用户ID列表（QQ号），用英文逗号分隔，例如: 123456789,987654321",
+        "type": "string",
+        "default": ""
+    },
+    "debug_mode": {
+        "description": "调试模式：开启后输出详细的清洗过程、Prompt分析、评分依据等",
+        "type": "bool",
+        "default": false
+    }
 }
