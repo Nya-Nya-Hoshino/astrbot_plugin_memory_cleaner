@@ -123,6 +123,24 @@ class Main(Star):
             f"对话总数:   {conv_count}"
         )
 
+    @staticmethod
+    def _extract_text(content) -> str:
+        """从 OpenAI 格式的 content 中提取纯文本（兼容 str 和 list）"""
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts = []
+            for item in content:
+                if isinstance(item, dict):
+                    if item.get("type") == "text":
+                        parts.append(str(item.get("text", "")))
+                    elif item.get("text"):
+                        parts.append(str(item["text"]))
+                elif isinstance(item, str):
+                    parts.append(item)
+            return " ".join(parts)
+        return str(content) if content else ""
+
     # ==================== 记忆查询 ====================
 
     @filter.command("记忆查询")
@@ -157,8 +175,8 @@ class Main(Star):
                     history = self._parse_history(conv.history)
                     for item in history:
                         role = item.get("role", "")
-                        content = item.get("content", "")
-                        if role in ("user", "assistant"):
+                        content = self._extract_text(item.get("content", ""))
+                        if role in ("user", "assistant") and content.strip():
                             recent_msgs.append((role, content))
                     break
 
