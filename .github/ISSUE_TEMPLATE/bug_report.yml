@@ -1,0 +1,41 @@
+name: Bug 报告
+description: 提交 bug 报告帮助我们改进
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: "## 感谢你花时间提交 bug 报告！"
+  - type: input
+    id: version
+    attributes:
+      label: 插件版本
+      placeholder: "v1.0.1"
+    validations:
+      required: true
+  - type: input
+    id: astrbot_version
+    attributes:
+      label: AstrBot 版本
+      placeholder: "v4.24.4"
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug 描述
+      description: 发生了什么？预期是什么？
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 错误日志
+      description: 复制粘贴 AstrBot 日志中的相关错误（如果有）
+      render: shell
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 如何触发这个 bug？
+      placeholder: "1. 执行 /清洗记忆\n2. ..."
