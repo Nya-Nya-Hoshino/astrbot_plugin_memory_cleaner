@@ -162,6 +162,43 @@ git clone https://github.com/Nya-Nya-Hoshino/astrbot_plugin_memory_cleaner.git m
 | 对话删除失败 | 尝试降级为清空当前对话 |
 | 评分解析失败 | 显示原始 LLM 返回，标记评分为 "?" |
 
+## About
+
+### 简介
+
+**记忆清洗 (Memory Cleaner)** 是一个 AstrBot 管理类插件，解决 LLM 更新 System Prompt / Persona 后旧人格残留的问题。
+
+插件并不是简单地"删除记忆"——因为 LLM 本身是无状态的。所谓"记忆"实际上是 AstrBot 在每次推理时从多个来源组装注入的上下文。本插件通过 **删除旧对话 + 创建全新会话 + 清除 SP 偏好 + 清除 Workspace + 重载 Persona** 的组合操作，确保下一次推理从零开始，只基于最新的 Prompt。
+
+### 指令一览
+
+| 指令 | 权限 | 功能 |
+|---|---|---|
+| `/清洗记忆` | 管理员 | 8步状态重建 + 6维评分 |
+| `/记忆查询` | 所有人 | 查看当前会话对话记忆 |
+| `/诊断会话` | 所有人 | 查看 umo 结构和会话模式 |
+
+### 版本历史
+
+| 版本 | 日期 | 说明 |
+|---|---|---|
+| v2.0.0 | 2025-06 | 重构为"会话状态重建"：新增新对话创建、SP清除、Workspace清除、6维评分 |
+| v1.0.2 | 2025-06 | 修复 /记忆查询 list+str 崩溃 + LLM抢答 |
+| v1.0.1 | 2025-06 | 修复 LLM API 调用错误 + _bar() 参数缺失 |
+| v1.0.0 | 2025-06 | 初始发布 |
+
+### 作者
+
+- **GitHub**: [Nya-Nya-Hoshino](https://github.com/Nya-Nya-Hoshino)
+- **仓库**: [astrbot_plugin_memory_cleaner](https://github.com/Nya-Nya-Hoshino/astrbot_plugin_memory_cleaner)
+
+### 技术栈
+
+- Python 3.10+
+- AstrBot Plugin SDK (Star 基类)
+- AstrBot ConversationManager / PersonaManager API
+- SharedPreferences (sp) 会话偏好管理
+
 ## 许可证
 
 MIT License
