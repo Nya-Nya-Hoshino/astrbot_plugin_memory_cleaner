@@ -97,6 +97,96 @@ class Main(Star):
             chunk = text[i:i + max_len]
             yield event.plain_result(chunk)
 
+    # ==================== 记忆查询 ====================
+
+    @filter.command("记忆查询")
+    async def query_memory(self, event: AstrMessageEvent):
+        """
+        /记忆查询 —— 所有人可用
+        输出当前会话的对话记忆摘要，不泄露 Prompt/人格设定
+        """
+        umo = event.unified_msg_origin
+        user_name = event.get_sender_name()
+        conv_mgr = self.context.conversation_manager
+
+        try:
+            # 获取当前对话 ID 和所有对话
+            curr_cid = await conv_mgr.get_curr_conversation_id(umo) or ""
+            conversations = await conv_mgr.get_conversations(umo) or []
+
+            if not conversations:
+                yield event.plain_result("📭 当前没有任何对话记忆。")
+                return
+
+            # 统计总轮次
+            total_turns = 0
+            for conv in conversations:
+                history = self._parse_history(conv.history)
+                total_turns += len(history) // 2
+
+            # 只取当前对话的最近 N 条用户可见消息
+            recent_msgs = []
+            for conv in conversations:
+                if conv.cid == curr_cid:
+                    history = self._parse_history(conv.history)
+                    for item in history:
+                        role = item.get("role", "")
+                        content = item.get("content", "")
+                        if role in ("user", "assistant"):
+                            recent_msgs.append((role, content))
+                    break
+
+            # 构建输出
+            lines = [
+                f"🧠 记忆查询 | 请求者: {user_name}",
+                "━━━━━━━━━━━━━━━━━━━━",
+                f"📊 对话总数: {len(conversations)}",
+                f"💬 总对话轮次: {total_turns}",
+            ]
+
+            if curr_cid:
+                lines.append(f"📍 当前对话: {curr_cid[:8]}...")
+            lines.append("")
+
+            if not recent_msgs:
+                lines.append("📭 当前对话无历史记录。")
+            else:
+                # 取最近 6 轮（12条消息）
+                show_count = min(len(recent_msgs), 12)
+                recent = recent_msgs[-show_count:]
+                lines.append(f"📜 最近 {show_count//2} 轮对话:")
+                for role, content in recent:
+                    prefix = "👤 用户" if role == "user" else "🤖 助手"
+                    # 每条消息截断到 100 字符
+                    short = content[:100] + ("..." if len(content) > 100 else "")
+                    lines.append(f"  {prefix}: {short}")
+                lines.append("")
+
+            lines.append("💡 仅展示最近对话历史，不含系统 Prompt 设定。")
+            lines.append("   管理员可使用 /清洗记忆 清除所有记忆。")
+
+            async for chunk in self._send_long_msg(event, "\n".join(lines)):
+                yield chunk
+
+        except Exception as e:
+            logger.error(f"[memory_cleaner] 记忆查询异常: {e}", exc_info=True)
+            yield event.plain_result(f"❌ 记忆查询失败: {e}")
+
+    def _parse_history(self, history) -> list:
+        """安全解析对话历史 JSON，始终返回 list"""
+        if not history:
+            return []
+        try:
+            if isinstance(history, str):
+                data = json.loads(history)
+            elif isinstance(history, list):
+                data = history
+            else:
+                return []
+            return data if isinstance(data, list) else []
+        except (json.JSONDecodeError, TypeError):
+            return []
+
     # ==================== 核心指令 ====================
 
     @filter.command("清洗记忆")
