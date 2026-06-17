@@ -75,14 +75,11 @@ class Main(Star):
                 logger.warning("[memory_cleaner] 没有可用的 LLM provider")
                 return "[ERROR] 没有可用的 LLM provider，无法执行检测"
 
-            req = provider.request(
+            result = await provider.text_chat(
                 system_prompt=system_prompt,
-                user_message=user_question,
+                prompt=user_question,
             )
-            result = await req
-            text = result.get("completion_text", "")
-            if not text and hasattr(result, "completion_text"):
-                text = result.completion_text
+            text = result.completion_text if hasattr(result, "completion_text") else str(result)
             return text or "[ERROR] LLM 返回空回复"
         except Exception as e:
             logger.error(f"[memory_cleaner] LLM 调用失败: {e}")
@@ -373,7 +370,7 @@ class Main(Star):
     def _build_report(self, user_name: str, prompt: str, scores: dict, debug: bool) -> str:
         """构建清洗结果报告"""
 
-        def _bar(score, label, width=10):
+        def _bar(score, width=10):
             """生成进度条"""
             if isinstance(score, str) or score == "?":
                 return f"{score:>4}"
