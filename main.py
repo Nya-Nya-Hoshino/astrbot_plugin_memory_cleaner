@@ -94,6 +94,35 @@ class Main(Star):
             chunk = text[i:i + max_len]
             yield event.plain_result(chunk)
 
+    # ==================== 诊断 ====================
+
+    @filter.command("诊断会话")
+    async def diagnose_session(self, event: AstrMessageEvent):
+        """输出当前会话的 umo、平台、会话模式信息"""
+        umo = event.unified_msg_origin
+        parts = umo.split(":")
+        platform = parts[0] if len(parts) > 0 else "?"
+        msg_type = parts[1] if len(parts) > 1 else "?"
+        session_id = parts[2] if len(parts) > 2 else "?"
+        has_user = len(parts) > 3
+
+        conv_mgr = self.context.conversation_manager
+        curr_cid = await conv_mgr.get_curr_conversation_id(umo) or "(无)"
+        conversations = await conv_mgr.get_conversations(umo) or []
+        conv_count = len(conversations)
+
+        yield event.plain_result(
+            f"🔍 会话诊断\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"umo 完整值: {umo}\n"
+            f"  ├ 平台:     {platform}\n"
+            f"  ├ 消息类型: {msg_type}\n"
+            f"  ├ 会话ID:   {session_id}\n"
+            f"  └ 含用户ID: {'是 → group_unique_session' if has_user else '否 → group_shared_session'}\n\n"
+            f"当前对话ID: {curr_cid[:16]}...\n"
+            f"对话总数:   {conv_count}"
+        )
+
     # ==================== 记忆查询 ====================
 
     @filter.command("记忆查询")
