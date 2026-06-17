@@ -239,10 +239,9 @@ class Main(Star):
     @filter.command("清洗记忆")
     async def clean_memory(self, event: AstrMessageEvent):
         """
-        /清洗记忆 —— 主指令
-        清除记忆 → 重载 Prompt → 重建人格 → 理解度检测 → 评分报告
+        /清洗记忆 —— 重建会话状态，强制以最新 Prompt 为起点重新推理
+        删除旧对话 → 新建会话 → 清除会话偏好 → 清除 workspace → 重载 Prompt → 人格内化 → 理解度检测 → 评分
         """
-        # ---- 第0步：权限校验 ----
         if not self._is_authorized(event):
             yield event.plain_result("⛔ 权限不足。只有授权的管理员才能执行 /清洗记忆。\n请在插件配置中设置 admin_users（QQ号，逗号分隔）。")
             return
@@ -251,132 +250,160 @@ class Main(Star):
         umo = event.unified_msg_origin
         debug = self.debug
 
-        yield event.plain_result(f"🧹 {user_name} 发起了记忆清洗...")
+        yield event.plain_result(f"🧹 {user_name} 发起了状态重建...")
 
-        log_lines = [f"=== 记忆清洗日志 | 操作用户: {user_name} ==="]
+        log_lines = [f"=== 状态重建日志 | 操作用户: {user_name} ==="]
         def log(msg):
             logger.info(f"[memory_cleaner] {msg}")
             log_lines.append(msg)
 
         try:
             # ---- 第1步：停止活跃 Agent ----
-            log("[1/7] 停止活跃 Agent...")
+            log("[1/8] 停止活跃 Agent...")
             if _HAS_ACTIVE_REGISTRY:
                 try:
                     active_event_registry.stop_all(umo, exclude=event)
                     log("  ✓ Agent 已停止")
                 except Exception as e:
-                    log(f"  ⚠ Agent 停止异常（可能无活跃任务）: {e}")
+                    log(f"  ⚠ Agent 停止异常: {e}")
             else:
                 log("  ⚠ 跳过（模块不可用）")
 
-            # ---- 第2步：读取当前人格 Prompt ----
-            log("[2/7] 读取当前人格 Prompt...")
+            # ---- 第2步：读取最新 Prompt（删数据前先读）----
+            log("[2/8] 读取当前 AstrBot 配置的人格 Prompt...")
             system_prompt = await self._get_persona_prompt(event)
             if not system_prompt:
-                log("  ⚠ 未读取到有效 Prompt！请检查 AstrBot 人格配置")
-                yield event.plain_result("⚠️ 未读取到当前人格 Prompt！请检查 AstrBot 的 Persona 配置是否正确设置。")
+                log("  ⚠ 未读取到有效 Prompt！")
+                yield event.plain_result("⚠️ 未读取到当前人格 Prompt！请检查 AstrBot 的 Persona 配置。")
                 return
-
-            prompt_preview = system_prompt[:200] + ("..." if len(system_prompt) > 200 else "")
             log(f"  ✓ Prompt 长度: {len(system_prompt)} 字符")
-            log(f"  📝 Prompt 预览: {prompt_preview}")
             if debug:
-                yield event.plain_result(f"📝 当前 Prompt 预览:\n{prompt_preview}")
+                yield event.plain_result(f"📝 Prompt 预览:\n{system_prompt[:200]}...")
 
-            # ---- 第3步：清除会话历史 ----
-            log("[3/7] 清除当前会话所有对话历史...")
+            # ---- 第3步：删除所有旧对话 ----
+            log("[3/8] 删除所有旧对话...")
             conv_mgr = self.context.conversation_manager
+            old_count = 0
             try:
+                old_convs = await conv_mgr.get_conversations(umo) or []
+                old_count = len(old_convs)
                 await conv_mgr.delete_conversations_by_user_id(umo)
-                log("  ✓ 所有对话已删除")
+                log(f"  ✓ 已删除 {old_count} 个旧对话")
             except Exception as e:
-                log(f"  ⚠ 批量删除失败，尝试清空当前对话: {e}")
+                log(f"  ⚠ 批量删除失败: {e}")
                 try:
                     cid = await conv_mgr.get_curr_conversation_id(umo)
                     if cid:
                         await conv_mgr.update_conversation(umo, cid, [])
-                        log("  ✓ 当前对话已清空")
+                        log("  ✓ 改为清空当前对话")
                 except Exception as e2:
-                    log(f"  ⚠ 清空当前对话也失败: {e2}")
-            yield event.plain_result("🗑️ 对话历史已清除")
+                    log(f"  ⚠ 清空也失败: {e2}")
 
-            # ---- 第4步：刷新 Persona 缓存 ----
-            log("[4/7] 刷新 Persona 缓存...")
+            # ---- 第4步：创建全新对话（fresh UUID，零历史）----
+            log("[4/8] 创建全新推理会话...")
             try:
-                persona_mgr = self.context.persona_manager
-                persona_mgr.get_v3_persona_data()  # 刷新内存缓存
+                new_cid = await conv_mgr.new_conversation(umo, event.get_platform_id())
+                log(f"  ✓ 新对话已创建: {new_cid[:16]}...")
+            except Exception as e:
+                log(f"  ⚠ 创建新对话失败: {e}")
+
+            yield event.plain_result("🗑️ 旧会话已清除，新推理会话已建")
+
+            # ---- 第5步：清除会话级偏好（sp）----
+            log("[5/8] 清除会话级配置偏好...")
+            try:
+                from astrbot.core import sp
+                await sp.session_remove(umo, "sel_conv_id")
+                await sp.session_remove(umo, "session_service_config")
+                log("  ✓ 会话偏好已清除")
+            except Exception as e:
+                log(f"  ⚠ 清除偏好失败: {e}")
+
+            # ---- 第6步：清除 Workspace EXTRA_PROMPT.md ----
+            log("[6/8] 检查并清除 workspace 残留指令...")
+            try:
+                from pathlib import Path
+                from astrbot.core.utils.astrbot_path import get_astrbot_workspaces_path
+                normalized = umo.replace(":", "_").replace("/", "_")
+                ws_extra = Path(get_astrbot_workspaces_path()) / normalized / "EXTRA_PROMPT.md"
+                if ws_extra.is_file():
+                    ws_extra.unlink()
+                    log(f"  ✓ 已删除 {ws_extra}")
+                else:
+                    log("  ✓ 无需清除（文件不存在）")
+            except Exception as e:
+                log(f"  ⚠ workspace 清理失败: {e}")
+
+            # ---- 第7步：刷新 Persona + 人格内化 ----
+            log("[7/8] 刷新 Persona 缓存并执行人格内化...")
+            try:
+                self.context.persona_manager.get_v3_persona_data()
                 log("  ✓ Persona 缓存已刷新")
             except Exception as e:
-                log(f"  ⚠ Persona 缓存刷新异常: {e}")
+                log(f"  ⚠ 缓存刷新异常: {e}")
 
-            # ---- 第5步：人格重建 ----
-            log("[5/7] 执行人格重建（让 LLM 深度内化新 Prompt）...")
             rebuild_prompt = (
-                "你刚刚经历了一次记忆重置。现在，请你仔细阅读并完全内化以下系统设定，"
-                "这将成为你唯一的行为准则。请用一段话（50-100字）总结你理解的人设：\n\n"
+                "你刚刚经历了一次完整的状态重建。旧的对话记录、会话偏好、工作区指令均已被清除。\n"
+                "现在，你是全新的实例。请仔细阅读并完全内化以下系统设定，"
+                "这将成为你唯一的行为准则。请用一段话（50-100字）总结你理解的人设和核心行为规范：\n\n"
                 f"=== 系统设定 ===\n{system_prompt}\n=== 设定结束 ==="
             )
-            rebuild_result = await self._llm_check("你是一个认真负责的助手。", rebuild_prompt)
-            log(f"  ✓ 人格重建完成")
+            rebuild_result = await self._llm_check(
+                "你是一个认真负责的助手，请认真阅读并总结系统设定。",
+                rebuild_prompt
+            )
+            log("  ✓ 人格内化完成")
             if debug:
-                yield event.plain_result(f"🔄 人格重建结果:\n{rebuild_result[:300]}")
+                yield event.plain_result(f"🔄 内化结果:\n{rebuild_result[:300]}")
 
-            # ---- 第6步：理解度检测 ----
-            log("[6/7] 执行 Prompt 理解度检测...")
+            # ---- 第8步：理解度检测 + 评分 ----
+            log("[8/8] 执行 Prompt 理解度检测...")
             check_prompt = (
-                "你是一位严格的 Prompt 合规性审计员。下面会提供一份「系统设定」和一份「助手自述」。\n"
+                "你是一位严格的 Prompt 合规性审计员。下面会提供一份「系统设定」和一份「助手内化自述」。\n"
                 "请判断助手是否真正理解并遵循了系统设定。请按以下维度以 JSON 格式评分：\n\n"
-                "1. persona_match (0-100)：人设一致性 —— 助手自述中的人设是否完全匹配系统设定的角色/身份描述\n"
-                "2. style_match (0-100)：风格一致性 —— 助手的语气、措辞风格是否符合系统设定要求\n"
-                "3. rule_compliance (0-100)：规则遵循度 —— 助手是否理解并遵循了系统设定中的所有规则和限制\n"
-                "4. memory_pollution (0-100)：记忆污染度 —— 是否存在与系统设定无关或冲突的残留信息（0=完全无污染，100=严重污染）\n"
-                "5. overall (0-100)：综合评分 —— 整体表现\n\n"
+                "1. persona_match (0-100)：人设一致性 —— 身份、角色、背景是否完全匹配\n"
+                "2. style_match (0-100)：风格一致性 —— 语气、措辞、口癖是否符合设定\n"
+                "3. rule_compliance (0-100)：规则遵循度 —— 是否理解所有行为限制和规则\n"
+                "4. old_persona_leak (0-100)：旧人格泄露度 —— 是否残留旧设定痕迹（越高越严重）\n"
+                "5. old_memory_leak (0-100)：旧记忆泄露度 —— 是否引用了不应存在的历史信息（越高越严重）\n"
+                "6. overall (0-100)：综合评分\n\n"
                 f"=== 系统设定 ===\n{system_prompt}\n=== 设定结束 ===\n\n"
-                f"=== 助手自述 ===\n{rebuild_result}\n=== 自述结束 ===\n\n"
-                "请仅输出如下格式的 JSON（不要带 markdown 代码块标记）：\n"
-                '{"persona_match": 分数, "style_match": 分数, "rule_compliance": 分数, "memory_pollution": 分数, "overall": 分数, "comment": "一段简短的中文评语"}'
+                f"=== 助手内化自述 ===\n{rebuild_result}\n=== 自述结束 ===\n\n"
+                "请仅输出 JSON（不要 markdown 代码块）：\n"
+                '{"persona_match": 分, "style_match": 分, "rule_compliance": 分, '
+                '"old_persona_leak": 分, "old_memory_leak": 分, "overall": 分, "comment": "评语"}'
             )
             check_result = await self._llm_check(
                 "你是一个严格但公正的审计员。只输出 JSON。",
                 check_prompt
             )
-            log(f"  📊 检测原始结果: {check_result[:500]}")
+            log(f"  📊 原始结果: {check_result[:500]}")
 
-            # ---- 第7步：解析评分并生成报告 ----
-            log("[7/7] 解析评分并生成报告...")
+            # ---- 解析评分 ----
             try:
                 scores = self._parse_scores(check_result)
             except Exception as e:
-                log(f"  ⚠ 评分解析失败: {e}")
+                log(f"  ⚠ 解析失败: {e}")
                 scores = {
-                    "persona_match": "?",
-                    "style_match": "?",
-                    "rule_compliance": "?",
-                    "memory_pollution": "?",
-                    "overall": "?",
-                    "comment": f"评分解析失败，原始返回: {check_result[:200]}"
+                    "persona_match": "?", "style_match": "?", "rule_compliance": "?",
+                    "old_persona_leak": "?", "old_memory_leak": "?", "overall": "?",
+                    "comment": f"解析失败: {check_result[:200]}"
                 }
 
             report = self._build_report(user_name, system_prompt, scores, debug)
-            log(f"  ✓ 报告已生成")
-
-            # ---- 输出最终报告 ----
             async for chunk in self._send_long_msg(event, report):
                 yield chunk
 
             if debug:
-                log_lines.insert(0, "")  # 空行分隔
-                full_log = "\n".join(log_lines)
-                async for chunk in self._send_long_msg(event, f"📋 调试日志:\n{full_log}"):
+                async for chunk in self._send_long_msg(event, f"📋 调试日志:\n" + "\n".join(log_lines)):
                     yield chunk
 
-            log("=== 清洗完成 ===")
+            log("=== 重建完成 ===")
             event.stop_event()
 
         except Exception as e:
-            logger.error(f"[memory_cleaner] 清洗过程异常: {e}", exc_info=True)
-            yield event.plain_result(f"❌ 记忆清洗过程中发生错误: {e}\nAstrBot 运行不受影响，请检查日志排查问题。")
+            logger.error(f"[memory_cleaner] 状态重建异常: {e}", exc_info=True)
+            yield event.plain_result(f"❌ 状态重建过程发生错误: {e}\nAstrBot 运行不受影响。")
 
     # ==================== 评分解析 ====================
 
@@ -404,7 +431,8 @@ class Main(Star):
         scores = json.loads(text)
 
         # 验证和补全字段
-        expected_keys = ["persona_match", "style_match", "rule_compliance", "memory_pollution", "overall"]
+        expected_keys = ["persona_match", "style_match", "rule_compliance",
+                         "old_persona_leak", "old_memory_leak", "overall"]
         for key in expected_keys:
             if key not in scores:
                 scores[key] = "?"
@@ -449,7 +477,8 @@ class Main(Star):
             f"  人设一致性:    {_bar(scores.get('persona_match', '?'))}",
             f"  风格匹配度:    {_bar(scores.get('style_match', '?'))}",
             f"  规则遵循度:    {_bar(scores.get('rule_compliance', '?'))}",
-            f"  记忆污染度:    {_bar(scores.get('memory_pollution', '?'))}  (越低越好)",
+            f"  旧人格泄露度:  {_bar(scores.get('old_persona_leak', '?'))}  (越低越好)",
+            f"  旧记忆泄露度:  {_bar(scores.get('old_memory_leak', '?'))}  (越低越好)",
             f"  综合评分:      {_bar(overall)}",
             "",
         ]
@@ -464,7 +493,7 @@ class Main(Star):
             lines.append(f"📝 当前 Prompt 前300字:\n{prompt_preview}")
             lines.append("")
 
-        lines.append("💡 提示: 可在插件设置中开启 debug_mode 查看详细分析过程。")
+        lines.append("💡 提示: 可在插件设置中开启 debug_mode 查看详细重建日志。")
         lines.append("   配置 admin_users（QQ号逗号分隔）可授权其他管理员使用此指令。")
 
         return "\n".join(lines)
