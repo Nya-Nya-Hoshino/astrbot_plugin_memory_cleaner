@@ -1,0 +1,7 @@
+{
+  "memory_cleaner_enabled": {
+    "description": "启用 记忆清洗",
+    "type": "bool",
+    "default": true
+  }
+}

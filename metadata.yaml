@@ -1,0 +1,6 @@
+name: memory_cleaner
+desc: 管理员一键清洗上下文记忆，强制重载提示词人格设定并进行理解度自检评分
+help: 记忆清洗 - 管理员一键清洗上下文记忆，强制重载提示词人格设定并进行理解度自检评分
+version: v1.0.0
+author: Nya-Nya-Hoshino
+repo: https://github.com/Nya-Nya-Hoshino/astrbot_plugin_memory_cleaner
